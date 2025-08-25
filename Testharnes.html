@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guide: MATLAB Test Harness for M450 Power Mode Logic</title>
+    <!-- Chosen Palette: Calm Neutral -->
+    <!-- Application Structure Plan: The application is designed as a single-page, long-read instructional guide. This linear structure is optimal for a step-by-step tutorial, guiding a beginner from foundational concepts to practical execution. A floating side navigation allows users to easily jump between steps, enhancing usability without breaking the instructional flow. The content is broken into thematic sections: Introduction (Why?), Prerequisites (What you need), Understanding the System (Connecting software requirements to hardware), and then a series of sequential "Step" sections detailing the "How-To". This structure was chosen over a dashboard because the goal is knowledge transfer and process replication, which is best served by a clear, sequential narrative. -->
+    <!-- Visualization & Content Choices: Content is synthesized from the BWC Software Requirements (Sec G: Power Control) and M450 Technical Spec. The key requirement chosen for this guide is "Power Mode Management"—it's a core ECU function with clear inputs (Ignition, CAN wake), outputs (ECU state), and logic, making it an ideal example. Goal: Organize & Inform -> Viz/Method: Styled HTML tables are used to explicitly map abstract software requirements to concrete hardware I/O (M450 spec) and then to Simulink test blocks. This mapping is critical for a beginner's understanding. Goal: Change (over time) -> Viz/Method: Chart.js is used to create static visual representations of dynamic input signals (for test scenarios) and expected output signals. This helps the user visualize the time-based behavior being tested (e.g., an ignition signal turning on and off). The charts are illustrative, showing what the user should aim to create or expect to see in Simulink. Justification: This approach makes the guide highly visual and practical, directly supporting the learning process by translating document-based requirements into a tangible testing plan. Library: Chart.js for canvas-based charts. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #f4f5f7;
+            --bg-card: #ffffff;
+            --bg-code: #eef2ff;
+            --text-primary: #1f2937;
+            --text-secondary: #4b5563;
+            --accent-primary: #4f46e5;
+            --accent-light: #c7d2fe;
+            --border-color: #d1d5db;
+        }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-main); color: var(--text-primary); }
+        h1, h2, h3 { font-weight: 700; }
+        h1 { color: var(--text-primary); }
+        h2 { border-bottom: 2px solid var(--accent-light); padding-bottom: 0.5rem; margin-top: 2.5rem; margin-bottom: 1.5rem; color: var(--accent-primary); }
+        h3 { margin-top: 2rem; margin-bottom: 1rem; color: var(--text-primary); }
+        p, li { color: var(--text-secondary); line-height: 1.6; }
+        code { background-color: var(--bg-code); color: var(--accent-primary); padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-family: 'Courier New', Courier, monospace; font-weight: 600;}
+        .card { background-color: var(--bg-card); border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); padding: 1.5rem; }
+        .step-number { background-color: var(--accent-primary); color: white; border-radius: 9999px; width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; margin-right: 0.75rem; }
+        .nav-link { display: block; padding: 0.5rem 1rem; border-left: 3px solid transparent; color: var(--text-secondary); text-decoration: none; font-weight: 500; }
+        .nav-link:hover { color: var(--accent-primary); border-left-color: var(--accent-light); }
+        .nav-link.active { color: var(--accent-primary); border-left-color: var(--accent-primary); font-weight: 600; }
+        .chart-container { position: relative; width: 100%; max-width: 800px; margin-left: auto; margin-right: auto; height: 300px; max-height: 350px; }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="lg:flex lg:space-x-12">
+            <aside class="lg:w-64 lg:sticky lg:top-8 lg:self-start py-8 hidden lg:block">
+                <nav id="side-nav">
+                </nav>
+            </aside>
+            <main class="flex-1 py-8 lg:py-12">
+                <article>
+                    <header class="mb-12">
+                        <p class="text-base font-semibold leading-7 text-indigo-600" style="color:var(--accent-primary);">Beginner's Guide</p>
+                        <h1 class="mt-2 text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl" style="color:var(--text-primary);">Creating a Simulink Test Harness for M450 Power Modes</h1>
+                        <p class="mt-6 text-xl leading-8 text-gray-700" style="color:var(--text-secondary);">A step-by-step tutorial for verifying BWC power mode software requirements on the M450 using Simulink Test in MATLAB 2024a.</p>
+                    </header>
+                    
+                    <section id="section-intro" class="card mb-8">
+                        <h2 class="!mt-0">1. Introduction: What is a Test Harness?</h2>
+                        <p>In software development, especially in the automotive world, we need to be sure every single piece of code works perfectly. A <strong>test harness</strong> is a special model we build in Simulink to do just that. Think of it like a dedicated test bench for a single component. It lets us isolate a part of our software—which we call the <strong>System Under Test (SUT)</strong>—and run controlled experiments on it. We provide specific inputs and check if the outputs are exactly what we expect.</p>
+                        <p class="mt-4">For the Battery Workforce Challenge (BWC), where you are developing software for a complex component like a Battery Pack Control Module (BPCM) on the M450 ECU, this is not just good practice; it's essential. It allows you to:</p>
+                        <ul class="list-disc list-inside mt-4 space-y-2">
+                            <li><strong>Test Early:</strong> Verify your logic long before you have a physical battery or vehicle.</li>
+                            <li><strong>Be Safe:</strong> Simulate fault conditions safely in a model.</li>
+                            <li><strong>Be Precise:</strong> Create repeatable tests to prove your software meets every requirement in the BWC specification document.</li>
+                            <li><strong>Stay Organized:</strong> Keep your main BPCM model clean by moving all test-related logic into the harness.</li>
+                        </ul>
+                        <p class="mt-4">This guide will walk you through creating a test harness to verify a key BWC requirement: <strong>Power Mode Management</strong>. We will simulate the world as the M450 ECU sees it and verify that our software model behaves correctly.</p>
+                    </section>
+                    
+                    <section id="section-prereqs" class="card mb-8">
+                        <h2>2. Prerequisites and Setup</h2>
+                        <p>Before you begin, make sure you have the following ready.</p>
+                        <h3 class="text-lg">Required Software:</h3>
+                        <ul class="list-disc list-inside space-y-2">
+                            <li>MATLAB 2024a</li>
+                            <li>Simulink</li>
+                            <li>Simulink Test Toolbox</li>
+                        </ul>
+                        <h3 class="text-lg">The System Under Test (SUT):</h3>
+                        <p>This guide assumes you have a Simulink model containing a subsystem that represents your BPCM's power mode logic. If you don't have one, create a simple subsystem with the inputs and outputs we'll discuss in the next section. For this guide, we'll assume it's named <code>PowerMode_Logic_SUT</code>.</p>
+                        <div class="mt-4 p-4 border-l-4 border-indigo-400 bg-indigo-50">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A.75.75 0 008.5 13h3a.75.75 0 00.744-.63l.46-2.066a.25.25 0 01.244-.304H13a.75.75 0 000-1.5H9z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-indigo-700">A "subsystem" in Simulink is a block that contains other blocks, helping to organize your model. Your entire power mode logic should be inside one of these.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="section-understanding" class="card mb-8">
+                        <h2>3. Understanding the System: Power Mode Management</h2>
+                        <p>Before we can test something, we need to know exactly how it's supposed to work. For an ECU, power management is a critical background task. It ensures the ECU is fully active when needed (RUN mode) and consumes minimal energy when the vehicle is off (SLEEP mode).</p>
+                        
+                        <h3 class="text-lg">Key BWC Power Control Requirements:</h3>
+                        <p>Based on Section G of the BWC Software Requirements Document, the logic must:</p>
+                        <ul class="list-disc list-inside mt-4 space-y-2">
+                            <li>Determine the ECU's power mode based on various <strong>wake sources</strong>.</li>
+                            <li>The primary wake source is the <strong>Ignition signal (KL15)</strong>. When ignition is on, the BPCM must be in RUN mode.</li>
+                            <li>Other wake sources include CAN bus activity (<code>PT_CAN</code>). The ECU must wake up to process messages.</li>
+                            <li>When no wake sources are active for a calibrated amount of time, the BPCM must transition to a low-power SLEEP mode.</li>
+                            <li>Manage the power supply to external sensors, turning them on only when the ECU is in RUN mode to save power.</li>
+                            <li>Broadcast the current power mode status for diagnostic purposes.</li>
+                        </ul>
+
+                        <h3 class="text-lg">Mapping to the M450 ECU:</h3>
+                        <p>The M450 provides the physical hardware to manage its own power state. Our test harness needs to simulate the M450's electrical environment.</p>
+                        <div class="overflow-x-auto mt-4">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Concept</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SUT I/O Port (Example Name)</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">M450 Hardware Interface</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr class="bg-indigo-50"><td colspan="3" class="px-6 py-2 text-sm font-semibold text-indigo-800">Inputs to SUT (Things we will simulate)</td></tr>
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Ignition Signal</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><code>Ignition_Status_In</code></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Digital Input (KL15 on Pin X1)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Permanent Power</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><code>Keep_Alive_Power_In</code></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Power Input (KL30 on Pins X3/X4)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">CAN Wake Signal</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><code>CAN_Wake_In</code></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">CAN Bus Activity (PT_CAN on Pins X9/X10)</td>
+                                    </tr>
+                                     <tr class="bg-indigo-50"><td colspan="3" class="px-6 py-2 text-sm font-semibold text-indigo-800">Outputs from SUT (Things we will observe)</td></tr>
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">ECU Power State</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><code>ECU_Power_State_Out</code></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Internal State (Broadcast via CAN)</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Sensor Power Enable</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><code>Sensor_Power_Enable_Out</code></td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Digital Output (e.g., controlling Pin V4 SENS_PWR_EN)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section id="section-step1" class="card mb-8">
+                        <h2>4. Step 1: Create the Basic Test Harness</h2>
+                        <p>Let's create the harness itself. This is a simple, automated process in Simulink.</p>
+                        <ol class="list-none mt-6 space-y-4">
+                            <li class="flex items-start">
+                                <span class="step-number">1</span>
+                                <div>
+                                    <p class="font-semibold">Open your Simulink model and find your power mode logic subsystem (e.g., <code>PowerMode_Logic_SUT</code>).</p>
+                                </div>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="step-number">2</span>
+                                <div>
+                                    <p class="font-semibold">Right-click on the subsystem block.</p>
+                                </div>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="step-number">3</span>
+                                <div>
+                                    <p class="font-semibold">From the context menu, navigate to <strong>Test Harness &gt; Create for 'PowerMode_Logic_SUT'</strong>.</p>
+                                </div>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="step-number">4</span>
+                                <div>
+                                    <p class="font-semibold">The 'Create Test Harness' dialog will appear. Configure it as follows:</p>
+                                    <ul class="list-disc list-inside mt-2 space-y-1">
+                                        <li><strong>Name:</strong> Give it a descriptive name like <code>PowerMode_Test_Harness</code>.</li>
+                                        <li><strong>Sources and Sinks:</strong> For now, leave the defaults (<code>Inport</code> and <code>Outport</code>). We will customize these in the next step.</li>
+                                        <li><strong>Save harness:</strong> Choose <strong>Externally</strong>. This saves the harness as a separate <code>.slx</code> file, which is best practice for version control.</li>
+                                        <li>Make sure <strong>Synchronize when model and harness are opened</strong> is checked.</li>
+                                    </ul>
+                                </div>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="step-number">5</span>
+                                <div>
+                                    <p class="font-semibold">Click <strong>OK</strong>. A new window will open with your test harness. Your original subsystem block will now have a small badge on it, indicating it has a harness.</p>
+                                </div>
+                            </li>
+                        </ol>
+                    </section>
+                    
+                    <section id="section-step2" class="card mb-8">
+                        <h2>5. Step 2: Configure Harness Inputs (Simulate the World)</h2>
+                        <p>Now we replace the generic harness inputs with blocks that simulate the ECU's electrical environment for our test scenarios.</p>
+                         <h3 class="text-lg">Simulating Power and Wake Signals:</h3>
+                        <p>In your harness window, you'll see your SUT with lines coming into it. We will replace the source blocks on these lines.</p>
+                        <ol class="list-none mt-6 space-y-4">
+                            <li class="flex items-start">
+                                <span class="step-number">1</span>
+                                <div>
+                                    <p class="font-semibold">Open the Simulink Library Browser (View &gt; Library Browser).</p>
+                                </div>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="step-number">2</span>
+                                <div>
+                                    <p class="font-semibold">For inputs that are constant during a test (like keep-alive power), use a <strong>Constant</strong> block from <code>Simulink > Sources</code>.</p>
+                                    <ul class="list-disc list-inside mt-2 space-y-1">
+                                        <li>Drag a <strong>Constant</strong> block into your harness. Connect it to the SUT's <code>Keep_Alive_Power_In</code> port and set its value to <code>1</code> (representing power available).</li>
+                                    </ul>
+                                </div>
+                            </li>
+                            <li class="flex items-start">
+                                <span class="step-number">3</span>
+                                <div>
+                                    <p class="font-semibold">For inputs that change over time (like ignition or CAN activity), use a <strong>Signal Editor</strong> block, also from <code>Simulink > Sources</code>.</p>
+                                     <p class="mt-2">The Signal Editor is powerful because it lets you draw the exact input waveforms you need for your test. We'll design these waveforms in Step 4.</p>
+                                </div>
+                            </li>
+                        </ol>
+                    </section>
+
+                    <section id="section-step3" class="card mb-8">
+                        <h2>6. Step 3: Configure Harness Outputs (Observe the Results)</h2>
+                        <p>Next, we need to add blocks to see what our SUT is doing. We will connect these blocks to the output ports of our SUT.</p>
+                        <ol class="list-none mt-6 space-y-4">
+                            <li class="flex items-start">
+                                <span class="step-number">1</span>
+                                <div>
+                                    <p class="font-semibold">For signals we want to view as a graph over time (like the ECU power state), use a <strong>Scope</strong> block from <code>Simulink > Sinks</code>.</p>
+                                    <p class="mt-2">Drag a Scope into your harness and connect it to an SUT output, like <code>ECU_Power_State_Out</code>. You can connect multiple signals to one Scope to compare them.</p>
+                                </div>
+                            </li>
+                             <li class="flex items-start">
+                                <span class="step-number">2</span>
+                                <div>
+                                    <p class="font-semibold">To see the current numerical value of a signal, use a <strong>Display</strong> block, also from <code>Simulink > Sinks</code>.</p>
+                                    <p class="mt-2">This is very useful for checking the final value of the <code>ECU_Power_State_Out</code> signal at the end of the simulation.</p>
+                                </div>
+                            </li>
+                        </ol>
+                    </section>
+                    
+                     <section id="section-step4" class="card mb-8">
+                        <h2>7. Step 4: Design Test Scenarios with Signal Editor</h2>
+                        <p>A test is only as good as its input signals. We'll design two scenarios to test the core power mode logic: a normal ignition cycle and a CAN wake-up event.</p>
+
+                        <h3 class="text-lg">Scenario A: Normal Ignition Cycle</h3>
+                        <p>This tests the primary wake-up and shutdown sequence.</p>
+                        <ol class="list-none mt-4 space-y-2">
+                            <li><strong>Ignition Signal:</strong> Using a Signal Editor connected to <code>Ignition_Status_In</code>, create a signal that starts at <code>0</code>, steps up to <code>1</code> (Ignition ON) at 1s, and steps back down to <code>0</code> (Ignition OFF) at 4s.</li>
+                            <li><strong>CAN Wake:</strong> For this scenario, the CAN wake signal remains inactive. Use a <strong>Constant</strong> block set to <code>0</code> connected to the <code>CAN_Wake_In</code> port.</li>
+                        </ol>
+                        <div class="mt-6">
+                            <h4 class="text-center font-semibold text-gray-600">Expected Input Waveforms (Scenario A)</h4>
+                            <div class="chart-container">
+                                <canvas id="scenarioAChart"></canvas>
+                            </div>
+                        </div>
+
+                        <h3 class="text-lg">Scenario B: CAN Wake-Up Event</h3>
+                        <p>This tests the SUT's ability to wake from a secondary source without ignition.</p>
+                        <ol class="list-none mt-4 space-y-2">
+                             <li><strong>Ignition Signal:</strong> The ignition remains OFF. Use a <strong>Constant</strong> block set to <code>0</code> connected to the <code>Ignition_Status_In</code> port.</li>
+                             <li><strong>CAN Wake:</strong> Using a Signal Editor connected to <code>CAN_Wake_In</code>, create a signal that is normally <code>0</code> but pulses to <code>1</code> for a short duration (e.g., from t=1s to t=1.1s) to simulate a CAN message arriving.</li>
+                        </ol>
+                         <div class="mt-6">
+                            <h4 class="text-center font-semibold text-gray-600">Expected Input Waveforms (Scenario B)</h4>
+                            <div class="chart-container">
+                                <canvas id="scenarioBChart"></canvas>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section id="section-step5" class="card mb-8">
+                        <h2>8. Step 5: Simulate and Analyze Results</h2>
+                        <p>This is the moment of truth. We run the simulation and see if the SUT behaves as expected.</p>
+                        <h3 class="text-lg">Running Scenario A (Normal Ignition Cycle):</h3>
+                        <ol class="list-none mt-4 space-y-2">
+                           <li>Set the active signals and constants for "Scenario A".</li>
+                           <li>Set the simulation stop time in the Simulink toolbar (e.g., 6 seconds).</li>
+                           <li>Click the green 'Run' button.</li>
+                           <li><strong>Analyze the Scopes:</strong> You should see the <code>ECU_Power_State_Out</code> signal transition from SLEEP to RUN when the ignition signal goes high. When the ignition goes low, the power state should return to SLEEP. The <code>Sensor_Power_Enable_Out</code> should follow the RUN state.</li>
+                        </ol>
+                         <div class="mt-6">
+                            <h4 class="text-center font-semibold text-gray-600">Expected Output Waveforms (Scenario A)</h4>
+                            <div class="chart-container">
+                                <canvas id="resultAChart"></canvas>
+                            </div>
+                        </div>
+
+                        <h3 class="text-lg">Running Scenario B (CAN Wake-Up Event):</h3>
+                        <ol class="list-none mt-4 space-y-2">
+                           <li>Set the active signals and constants for "Scenario B".</li>
+                           <li>Run the simulation again.</li>
+                           <li><strong>Analyze the Scopes:</strong> You should see the <code>ECU_Power_State_Out</code> signal transition from SLEEP to RUN when the CAN wake pulse occurs. It should stay in RUN for a period (e.g., to process the message) and then transition back to SLEEP automatically, as there is no continuous wake source.</li>
+                        </ol>
+                         <div class="mt-6">
+                            <h4 class="text-center font-semibold text-gray-600">Expected Output Waveforms (Scenario B)</h4>
+                            <div class="chart-container">
+                                <canvas id="resultBChart"></canvas>
+                            </div>
+                        </div>
+                    </section>
+                    
+                    <section id="section-step6" class="card mb-8">
+                        <h2>9. Step 6: Next Steps - Formal Testing with Test Manager</h2>
+                        <p>Manually running simulations and looking at Scopes is great for development and debugging. For formal verification, Simulink provides a more powerful tool: the <strong>Simulink Test Manager</strong>.</p>
+                        <p class="mt-4">From the **Apps** tab in Simulink, open the Test Manager. It allows you to:</p>
+                        <ul class="list-disc list-inside mt-4 space-y-2">
+                            <li><strong>Automate Everything:</strong> Run hundreds of tests overnight.</li>
+                            <li><strong>Define Formal Pass/Fail:</strong> Instead of looking at a Scope, you can write assessments like "Verify that ECU_Power_State_Out is RUN within 100ms after Ignition_Status_In becomes 1".</li>
+                            <li><strong>Link to Requirements:</strong> Formally link each test case to a specific requirement in the BWC document, ensuring 100% test coverage.</li>
+                            <li><strong>Generate Reports:</strong> Automatically create detailed reports to prove your software has been tested thoroughly.</li>
+                        </ul>
+                         <p class="mt-4">While a full tutorial on the Test Manager is beyond this guide, know that it is the professional tool for taking your harness-based testing to the next level.</p>
+                    </section>
+                    
+                     <section id="section-conclusion" class="card">
+                        <h2>10. Conclusion and Further Exploration</h2>
+                        <p>Congratulations! You have learned the fundamentals of creating and using a Simulink test harness to verify a real-world automotive software requirement. You can now apply this knowledge to test all other aspects of your BPCM software.</p>
+                        <h3 class="text-lg">Where to go from here:</h3>
+                         <ul class="list-disc list-inside mt-4 space-y-2">
+                             <li><strong>Test Other Requirements:</strong> Create harnesses for the Contactor Weld Check, HVIL diagnostics, or Isolation Detection logic from the BWC document.</li>
+                             <li><strong>Fault Injection:</strong> Modify your input signals to simulate low battery voltage or stuck signals to test your software's diagnostic capabilities.</li>
+                             <li><strong>Vary Calibrations:</strong> Use the Test Manager to run tests with different calibration values (e.g., shutdown timers) to ensure your logic is robust.</li>
+                         </ul>
+                    </section>
+                </article>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const sections = document.querySelectorAll('section');
+            const nav = document.getElementById('side-nav');
+
+            const sectionData = Array.from(sections).map(section => ({
+                id: section.id,
+                title: section.querySelector('h2').textContent
+            }));
+
+            nav.innerHTML = sectionData.map(item =>
+                `<a href="#${item.id}" class="nav-link">${item.title}</a>`
+            ).join('');
+
+            const navLinks = nav.querySelectorAll('.nav-link');
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        navLinks.forEach(link => {
+                            link.classList.toggle('active', link.getAttribute('href').substring(1) === entry.target.id);
+                        });
+                    }
+                });
+            }, { rootMargin: "-50% 0px -50% 0px" });
+
+            sections.forEach(section => {
+                observer.observe(section);
+            });
+            
+            const createChart = (ctx, type, data, options) => new Chart(ctx, { type, data, options });
+
+            const defaultChartOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { title: { display: true, text: 'Time (s)' }, grid: { color: '#e5e7eb' } },
+                    y: { grid: { color: '#e5e7eb' }, min: -0.1, max: 1.1, title: { display: true, text: 'Signal State (0=Off, 1=On)' } }
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            };
+
+            const scenarioAData = {
+                labels: [0, 1, 4, 5, 6],
+                datasets: [{
+                    label: 'Ignition Status (KL15)',
+                    data: [0, 1, 0, 0, 0],
+                    borderColor: '#ef4444',
+                    backgroundColor: '#fecaca',
+                    stepped: true,
+                }]
+            };
+            createChart(document.getElementById('scenarioAChart').getContext('2d'), 'line', scenarioAData, defaultChartOptions);
+            
+            const scenarioBData = {
+                labels: [0, 1, 1.1, 2, 3],
+                datasets: [{
+                    label: 'CAN Wake Pulse',
+                    data: [0, 1, 0, 0, 0],
+                    borderColor: '#3b82f6',
+                    backgroundColor: '#bfdbfe',
+                    stepped: true
+                }]
+            };
+            createChart(document.getElementById('scenarioBChart').getContext('2d'), 'line', scenarioBData, defaultChartOptions);
+            
+            const powerStateOptions = { ...defaultChartOptions, 
+                scales: { 
+                    x: { title: { display: true, text: 'Time (s)'}}, 
+                    y: { 
+                        title: {display: true, text: 'ECU Power State'}, 
+                        min: -0.5, 
+                        max: 2.5,
+                        ticks: { 
+                            stepSize: 1, 
+                            callback: function(value) {
+                                switch(value){ case 0: return 'SLEEP'; case 1: return 'RUN'; case 2: return 'SHUTDOWN'; default: return '';}
+                            }
+                        } 
+                    } 
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks:{
+                            label: function(context) { 
+                                const val = context.raw; 
+                                let label = 'State: ';
+                                switch(val){ case 0: label += 'SLEEP'; break; case 1: label += 'RUN'; break; case 2: label += 'SHUTDOWN'; break; default: label = '';}
+                                return label;
+                            }
+                        }
+                    }
+                }
+            };
+            
+            const resultAData = {
+                labels: [0, 1, 4, 5, 6],
+                datasets: [{
+                    label: 'ECU Power State',
+                    data: [0, 1, 0, 0, 0],
+                    borderColor: '#16a34a',
+                    stepped: true,
+                }]
+            };
+            createChart(document.getElementById('resultAChart').getContext('2d'), 'line', resultAData, powerStateOptions);
+            
+            const resultBData = {
+                labels: [0, 1, 2.5, 3, 4],
+                datasets: [{
+                    label: 'ECU Power State',
+                    data: [0, 1, 0, 0, 0],
+                    borderColor: '#16a34a',
+                    stepped: true,
+                }]
+            };
+            createChart(document.getElementById('resultBChart').getContext('2d'), 'line', resultBData, powerStateOptions);
+
+        });
+    </script>
+</body>
+</html>
